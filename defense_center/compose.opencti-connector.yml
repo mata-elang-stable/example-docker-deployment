@@ -5,7 +5,7 @@ name: mataelang-opencti-connector
 networks:
   default:
     external:
-      name: mataelang
+      name: mataelang_default
 
 services:
   opencti-connector-aggregator:
