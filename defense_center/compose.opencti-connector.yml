@@ -10,7 +10,7 @@ networks:
 services:
   opencti-connector-aggregator:
     image: ghcr.io/mata-elang-stable/opencti-connector-aggregator:main
-    restart: unless-stoped
+    restart: unless-stopped
     environment:
       - KAFKA_URL=broker:29092
       - KAFKA_CONSUMER_GROUP_ID=opencti-aggr
@@ -23,7 +23,7 @@ services:
 
   opencti-connector-parser:
     image: ghcr.io/mata-elang-stable/opencti-connector-parser:main
-    restart: unless-stoped
+    restart: unless-stopped
     environment:
       - KAFKA_URL=broker:29092
       - KAFKA_CONSUMER_GROUP_ID=opencti-connector-parser
