@@ -151,6 +151,13 @@ services:
       - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
       - node.name=opensearch-node1
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-SecurePassword@123}
+      - plugins.security.ssl.transport.pemcert_filepath=certificates/opensearch-node1.pem
+      - plugins.security.ssl.transport.pemkey_filepath=certificates/opensearch-node1-key.pem
+      - plugins.security.ssl.transport.pemtrustedcas_filepath=certificates/root-ca.pem
+      - plugins.security.ssl.http.enabled=true
+      - plugins.security.ssl.http.pemcert_filepath=certificates/opensearch-node1.pem
+      - plugins.security.ssl.http.pemkey_filepath=certificates/opensearch-node1-key.pem
+      - plugins.security.ssl.http.pemtrustedcas_filepath=certificates/root-ca.pem
     env_file:
       - .env
     ulimits:
@@ -162,6 +169,7 @@ services:
         hard: 65536
     volumes:
       - opensearch_data1:/usr/share/opensearch/data
+      - ./certs/opensearch:/usr/share/opensearch/config/certificates:ro
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2
@@ -188,6 +196,7 @@ services:
     volumes:
       - ./conf/pipeline.conf:/usr/share/logstash/config/pipeline.conf:ro
       - ./certs/truststore.jks:/usr/share/logstash/config/truststore.jks:ro
+      - ./certs/opensearch/root-ca.pem:/usr/share/logstash/config/root-ca.pem
     environment:
       - LS_JAVA_OPT=-Xmx512m -Xms512m
       - LOGSTASH_INTERNAL_PASSWORD=${LOGSTASH_INTERNAL_PASSWORD:-}
