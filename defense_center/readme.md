@@ -59,6 +59,54 @@ The OpenCTI Integration add-on provides integration with OpenCTI, an open-source
 
 5. **Access Dashboard**: Access the Mata Elang Defense Center dashboard at http://localhost:5601.
 
+## Mutual TLS (mTLS) for Kafka
+
+This project supports mutual TLS between clients and the Kafka broker. The repo contains CNF templates for client certificates:
+- `certs/event-stream-aggr-creds/event-stream-aggr.cnf`
+- `certs/sensor-api-creds/sensor-api.cnf`
+- `certs/kafka-ui-creds/kafka-ui.cnf`
+ - `certs/logstash-creds/logstash.cnf`
+ - If you don't want to create per-client CNF files manually, copy `certs/client-default.cnf` and replace `__COMMON_NAME__` with the client CN (e.g., `event-stream-aggr`).
+    For example:
+     ```bash
+     cp certs/client-default.cnf certs/event-stream-aggr-creds/event-stream-aggr.cnf
+     sed -i 's/__COMMON_NAME__/event-stream-aggr/g' certs/event-stream-aggr-creds/event-stream-aggr.cnf
+     ```
+
+To generate the CA, server and client certificates and keystores, run:
+```bash
+cd defense_center
+cp .env.example .env  # if not already created
+./scripts/create-broker-keystore.sh
+```
+
+The script will produce the broker keystore, `truststore.jks`, and client certs under `certs/*-creds/`.
+The `docker-compose` services are configured to mount these certificates and enable mTLS.
+
+Note: The script requires that a per-client CNF file is present in `certs/<client>-creds/<client>.cnf` when generating client certificates. If the CNF is missing, the script will print instructions to copy `certs/client-default.cnf` and exit to let you confirm the CNF content for each client.
+Make sure `SSL_PASSWORD` (in `.env`) is set and the script runs successfully before `docker-compose up -d`.
+
+### Go clients: sensor-api and event-stream-aggr (PKCS#12 keystore)
+
+The Go-based clients `sensor-api` and `event-stream-aggr` accept PKCS#12 keystores to simplify client certificate management.
+Mount the PKCS#12 keystore and CA PEM into the containers and set the following environment variables (examples):
+
+```yaml
+# Volumes
+ - ./certs/ca.pem:/app/ca.pem:ro
+ - ./certs/sensor-api-creds/sensor-api.p12:/app/sensor-client.p12:ro
+
+# Environment (sensor-api)
+ - MES_SERVER_PATH_TO_CLIENT_KEYSTORE=/app/sensor-client.p12
+ - MES_SERVER_CLIENT_KEYSTORE_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
+
+# Environment (event-stream-aggr)
+ - PATH_TO_CLIENT_KEYSTORE=/app/event-stream-client.p12
+ - CLIENT_KEYSTORE_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
+```
+
+The Go clients use PKCS#12 keystores (recommended). PEM files are no longer mounted by default. If you need to re-enable PEM-based client authentication, see the older revision of `defense_center/compose.yml`.
+
 ### Deploying Add-ons
 
 #### Mata Elang Report Generator**: 
