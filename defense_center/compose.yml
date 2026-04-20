@@ -67,7 +67,7 @@ services:
           memory: 512M
 
   broker:
-    image: confluentinc/cp-kafka:8.1.0
+    image: confluentinc/cp-kafka:8.2.0
     restart: unless-stopped
     depends_on:
       broker-mtls-cert-generator:
@@ -116,7 +116,7 @@ services:
       - ./certs/truststore/truststore_creds:/etc/kafka/secrets/truststore_creds:ro
 
   schema-registry:
-    image: confluentinc/cp-schema-registry:8.1.0
+    image: confluentinc/cp-schema-registry:8.2.0
     restart: unless-stopped
     depends_on:
       broker-mtls-cert-generator:
@@ -295,7 +295,7 @@ services:
           memory: 1G
 
   opensearch-init:
-    image: curlimages/curl:8.16.0
+    image: curlimages/curl:8.19.0
     restart: on-failure
     depends_on:
       - opensearch-node1
