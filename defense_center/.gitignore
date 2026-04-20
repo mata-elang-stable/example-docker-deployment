@@ -1,2 +1,10 @@
 .env
-certs/
+*.key
+*.crt
+*.csr
+*.p12
+*.pkcs12
+*.pem
+*.jks
+*.srl
+*_creds
