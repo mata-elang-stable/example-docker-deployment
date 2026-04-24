@@ -227,7 +227,7 @@ create_schema_registry_creds() {
         -passin pass:$SSL_PASSWORD \
         -extensions v3_req
 
-    # Export PKCS12 including only server cert + CA cert (do NOT include CA private key)
+    # Export PKCS12
     openssl pkcs12 -export \
         -in ${cert}-creds/${cert}.crt \
         -inkey ${cert}-creds/${cert}.key \
@@ -237,7 +237,6 @@ create_schema_registry_creds() {
         -out ${cert}-creds/${cert}.p12 \
         -password pass:$SSL_PASSWORD
     
-    # Make .p12 file readable
     chmod 644 ${cert}-creds/${cert}.p12
 
     # Convert to JKS keystore for Schema Registry
@@ -258,21 +257,7 @@ create_schema_registry_creds() {
 }
 
 # ========================
-# Main
-# ========================
-create_ca
-
-# Broker creds
-for cert in "broker"; do
-    create_broker_creds ${cert}
-done
-
-# Schema Registry creds
-create_schema_registry_creds
-
-# ========================
-# Create client (service) credentials (PEM and PKCS12 and JKS for Java clients)
-# Uses an existing cnf file in ${cert}-creds/${cert}.cnf, like the broker and schema-registry
+# Create client (service) credentials
 # ========================
 create_client_creds() {
     local cert=$1
@@ -307,7 +292,7 @@ create_client_creds() {
         -passin pass:$SSL_PASSWORD \
         -extensions v3_req
 
-    # Export PKCS12 for client use
+    # Export PKCS12
     openssl pkcs12 -export \
         -in ${cert}-creds/${cert}.crt \
         -inkey ${cert}-creds/${cert}.key \
@@ -317,11 +302,9 @@ create_client_creds() {
         -out ${cert}-creds/${cert}.p12 \
         -password pass:$SSL_PASSWORD
     
-    # Make .p12 file readable by services
     chmod 644 ${cert}-creds/${cert}.p12
 
     if [ "${make_jks}" = "true" ]; then
-        # Convert to JKS for Java clients
         keytool -importkeystore \
             -deststorepass $SSL_PASSWORD \
             -destkeystore ${cert}-creds/${cert}-keystore.jks \
@@ -338,7 +321,109 @@ create_client_creds() {
     CHANGES_MADE=1
 }
 
-# Create a few default client credentials for services that will connect to Kafka
+# ========================
+# Create OpenSearch Credentials
+# OpenSearch Security Plugin uses raw PEM files, not JKS/PKCS12.
+# Files must match exactly what is declared in opensearch-node1 environment:
+#   pemcert_filepath   = certificates/opensearch-node1.pem
+#   pemkey_filepath    = certificates/opensearch-node1-key.pem
+#   pemtrustedcas_filepath = certificates/root-ca.pem
+# ========================
+create_opensearch_creds() {
+    local dir="opensearch"
+    local cert_file="${dir}/opensearch-node1.pem"
+
+    if ! check_cert_needs_renewal "$cert_file"; then
+        return
+    fi
+
+    echo "Creating OpenSearch SSL credentials..."
+    mkdir -p "$dir"
+
+    # Reuse the shared CA as the OpenSearch trusted CA
+    # opensearch-node1 mounts ./certs/opensearch -> /usr/share/opensearch/config/certificates
+    # so root-ca.pem must live inside that directory
+    cp ca-creds/ca.crt "${dir}/root-ca.pem"
+
+    # Use existing CNF if present (./certs/opensearch/opensearch-node.cnf)
+    # Otherwise generate a default one
+    local cnf="${dir}/opensearch-node.cnf"
+    if [ ! -f "$cnf" ]; then
+        echo "opensearch-node.cnf not found, generating default..."
+        cat > "$cnf" <<EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = ID
+O = MataElang
+CN = opensearch-node1
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment, digitalSignature
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = opensearch-node1
+DNS.2 = localhost
+IP.1 = 127.0.0.1
+EOF
+    fi
+
+    # Generate node private key
+    openssl genrsa -out "${dir}/opensearch-node1-key.pem" 2048
+
+    # Generate CSR
+    openssl req -new \
+        -key "${dir}/opensearch-node1-key.pem" \
+        -out "${dir}/opensearch-node1.csr" \
+        -config "$cnf"
+
+    # Sign with shared CA
+    openssl x509 -req \
+        -days $VALIDITY_DAYS \
+        -in "${dir}/opensearch-node1.csr" \
+        -CA ca-creds/ca.crt \
+        -CAkey ca-creds/ca.key \
+        -CAcreateserial \
+        -out "${dir}/opensearch-node1.pem" \
+        -extfile "$cnf" \
+        -extensions v3_req
+
+    # Cleanup CSR — not needed after signing
+    rm -f "${dir}/opensearch-node1.csr"
+
+    # OpenSearch runs as UID 1000 inside the container
+    # key must be 600, certs 644
+    chown ${HOST_UID:-1000}:${HOST_GID:-1000} "${dir}/root-ca.pem"
+    chown ${HOST_UID:-1000}:${HOST_GID:-1000} "${dir}/opensearch-node1.pem"
+    chown ${HOST_UID:-1000}:${HOST_GID:-1000} "${dir}/opensearch-node1-key.pem"
+
+    chmod 644 "${dir}/root-ca.pem"
+    chmod 644 "${dir}/opensearch-node1.pem"
+    chmod 640 "${dir}/opensearch-node1-key.pem"
+
+    echo "OpenSearch SSL credentials created."
+    CHANGES_MADE=1
+}
+
+# ========================
+# Main
+# ========================
+create_ca
+
+# Broker
+for cert in "broker"; do
+    create_broker_creds ${cert}
+done
+
+# Schema Registry
+create_schema_registry_creds
+
+# Kafka clients
 for client in "event-stream-aggr" "sensor-api" "kafka-ui" "logstash"; do
     if [ "$client" = "kafka-ui" ] || [ "$client" = "logstash" ]; then
         create_client_creds ${client} true
@@ -347,8 +432,8 @@ for client in "event-stream-aggr" "sensor-api" "kafka-ui" "logstash"; do
     fi
 done
 
-# Save truststore creds
-# echo $SSL_PASSWORD > truststore_creds # Moved to create_ca
+# OpenSearch
+create_opensearch_creds
 
 if [ $CHANGES_MADE -eq 1 ]; then
     echo "Certificates generated or renewed."

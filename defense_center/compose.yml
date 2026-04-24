@@ -17,6 +17,8 @@ services:
       - SSL_PASSWORD=${SSL_PASSWORD:-SecurePassword@123}
       - CERT_VALIDITY_DAYS=365
       - CERT_RENEW_THRESHOLD_DAYS=60
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-1000}
     env_file:
       - .env
     volumes:
@@ -29,6 +31,7 @@ services:
       - ./certs/event-stream-aggr-creds:/work/certs/event-stream-aggr-creds
       - ./certs/sensor-api-creds:/work/certs/sensor-api-creds
       - ./certs/logstash-creds:/work/certs/logstash-creds
+      - ./certs/opensearch:/work/certs/opensearch
 
   sensor-api:
     image: ghcr.io/mata-elang-stable/sensor-snort-service:latest
