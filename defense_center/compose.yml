@@ -50,19 +50,8 @@ services:
     volumes:
       - ./certs/ca-creds/ca.pem:/app/ca.pem:ro
       - ./certs/sensor-api-creds/sensor-api.p12:/app/sensor-client.p12:ro
-    environment:
-      - MES_SERVER_HOST=0.0.0.0
-      - MES_SERVER_PORT=50051
-      - MES_SERVER_INSECURE=true
-      - MES_SERVER_MAX_MESSAGE_SIZE=1024
-      - MES_SERVER_KAFKA_BROKERS=broker:19094
-      - MES_SERVER_SCHEMA_REGISTRY_URL=https://schema-registry:8081
-      - MES_SERVER_KAFKA_GROUP_ID=sensor-api
-      - MES_SERVER_KAFKA_TOPIC=sensor_events
-      - MES_SERVER_SECURITY_PROTOCOL=SSL
-      - MES_SERVER_PATH_TO_CA=/app/ca.pem
-      - MES_SERVER_PATH_TO_CLIENT_KEYSTORE=/app/sensor-client.p12
-      - MES_SERVER_CLIENT_KEYSTORE_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
+    env_file:
+      - .env
     deploy:
       resources:
         limits:

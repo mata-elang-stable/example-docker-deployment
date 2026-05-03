@@ -11,7 +11,7 @@ volumes:
 
 services:
   snort:
-    image: ghcr.io/mata-elang-stable/snort3-docker-image:v2.0-debian
+    image: ghcr.io/mata-elang-stable/snort3-docker-image:main-debian
     restart: unless-stopped
     network_mode: host
     env_file:
@@ -28,7 +28,11 @@ services:
 
   snort-parser:
     image: ghcr.io/mata-elang-stable/sensor-snort-service:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     restart: unless-stopped
+    container_name: snort-parser
     command: "client -v"
     depends_on:
       - snort
