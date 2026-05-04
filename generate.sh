@@ -74,6 +74,14 @@ error_exit() {
     exit 1
 }
 
+check_dependency() {
+    local cmd="$1"
+    local pkg="$2"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        error_exit "${cmd} not found. Install it: ${pkg}"
+    fi
+}
+
 show_help() {
     cat << EOF
 Usage: ./generate.sh [OPTIONS]
@@ -172,6 +180,9 @@ parse_toml() {
         if [[ "$line" =~ ^[[:space:]]*([a-zA-Z_]+)[[:space:]]*=[[:space:]]*(.+)[[:space:]]*$ ]]; then
             local key="${BASH_REMATCH[1]}"
             local value="${BASH_REMATCH[2]}"
+
+            # Strip inline comments (everything after first unquoted #)
+            value="${value%%#*}"
 
             # Trim whitespace from value
             value="${value#"${value%%[![:space:]]*}"}"
@@ -310,17 +321,21 @@ EOF
 
         local idx=1
         local dns
+        set -f  # disable globbing
         for dns in $dns_sans; do
             echo "DNS.${idx} = ${dns}" >> "$cnf_file"
             idx=$((idx + 1))
         done
+        set +f  # re-enable globbing
 
         idx=1
         local ip
+        set -f  # disable globbing
         for ip in $ip_sans; do
             echo "IP.${idx} = ${ip}" >> "$cnf_file"
             idx=$((idx + 1))
         done
+        set +f  # re-enable globbing
     fi
 }
 
@@ -336,7 +351,7 @@ generate_ca() {
     mkdir -p "$ca_dir"
 
     if [[ "$FORCE" == true ]]; then
-        rm -f "$ca_key" "$ca_crt"
+        rm -f "$ca_key" "$ca_crt" "${ca_dir}/ca.srl"
     fi
 
     if [[ "$FORCE" == false ]] && is_cert_valid "$ca_crt" && [[ -f "$ca_key" ]]; then
@@ -349,31 +364,26 @@ generate_ca() {
     chmod 600 "$ca_key"
 
     echo -e "${BLUE}  📝 Generating CA certificate...${NC}"
-    local subject="/C=${CA_COUNTRY}"
+    local subject=""
+    [[ -n "$CA_COUNTRY" ]] && subject="${subject}/C=${CA_COUNTRY}"
     [[ -n "$CA_STATE" ]] && subject="${subject}/ST=${CA_STATE}"
     [[ -n "$CA_LOCALITY" ]] && subject="${subject}/L=${CA_LOCALITY}"
     [[ -n "$CA_ORGANIZATION" ]] && subject="${subject}/O=${CA_ORGANIZATION}"
     subject="${subject}/CN=${CA_COMMON_NAME}"
 
-    local ca_ext_file="${ca_dir}/ca_ext.cnf"
-    cat > "$ca_ext_file" << EOF
-[ca_extensions]
-basicConstraints = critical, CA:TRUE
-keyUsage = critical, keyCertSign, cRLSign
-subjectKeyIdentifier = hash
-EOF
-
     openssl req -new -x509 -key "$ca_key" -subj "$subject" \
         -days "$CA_DAYS_VALID" \
-        -extensions ca_extensions -extfile "$ca_ext_file" \
-        -out "$ca_crt"
-
-    rm -f "$ca_ext_file"
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -addext "subjectKeyIdentifier=hash" \
+        -out "$ca_crt" || error_exit "Failed to create CA certificate"
     echo -e "${GREEN}  ✅ CA certificate generated${NC}"
     return 0
 }
 
 generate_truststore() {
+    check_dependency "keytool" "sudo apt install default-jre-headless"
+
     local ts_dir="${OUTPUT_DIR}/truststore"
     local ts_jks="${ts_dir}/truststore.jks"
     local ts_creds="${ts_dir}/truststore_creds"
@@ -392,8 +402,8 @@ generate_truststore() {
 
     echo -e "${BLUE}  📝 Creating Java truststore...${NC}"
     keytool -import -alias mataelang-ca -file "$ca_crt" \
-        -keystore "$ts_jks" \
-        -storepass "$SSL_PASSWORD" -noprompt
+        -keystore "$ts_jks" -storetype JKS \
+        -storepass "$SSL_PASSWORD" -noprompt || error_exit "Failed to create truststore"
 
     echo "$SSL_PASSWORD" > "$ts_creds"
     echo -e "${GREEN}  ✅ Truststore generated${NC}"
@@ -403,8 +413,8 @@ generate_truststore() {
 generate_client_cert() {
     local idx="$1"
     local name="${CLIENT_NAMES[idx]}"
-    local dns_sans="${CLIENT_DNS[idx]}"
-    local ip_sans="${CLIENT_IPS[idx]}"
+    local dns_sans="${CLIENT_DNS[idx]:-}"
+    local ip_sans="${CLIENT_IPS[idx]:-}"
     local keystore_type="${CLIENT_KEYSTORE_TYPES[idx]:-pkcs12}"
     local keystore_filename="${CLIENT_KEYSTORE_FILENAMES[idx]:-}"
 
@@ -438,24 +448,24 @@ generate_client_cert() {
     create_client_cnf "$cnf_file" "$name" "$dns_sans" "$ip_sans"
 
     # Generate private key
-    openssl genrsa -out "$cert_key" 2048
+    openssl genrsa -out "$cert_key" 2048 || error_exit "Failed to generate key for ${name}"
 
     # Create CSR
-    openssl req -new -key "$cert_key" -out "$cert_csr" -config "$cnf_file"
+    openssl req -new -key "$cert_key" -out "$cert_csr" -config "$cnf_file" || error_exit "Failed to create CSR for ${name}"
 
     # Sign with CA
     openssl x509 -req -in "$cert_csr" \
         -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial \
         -out "$cert_crt" \
         -days 3650 \
-        -extensions v3_req -extfile "$cnf_file"
+        -extensions v3_req -extfile "$cnf_file" || error_exit "Failed to sign certificate for ${name}"
 
     # Create PKCS12 keystore
     openssl pkcs12 -export -in "$cert_crt" -inkey "$cert_key" \
         -chain -CAfile "$ca_crt" \
         -name "$name" \
         -out "$cert_p12" \
-        -password pass:"$SSL_PASSWORD"
+        -password pass:"$SSL_PASSWORD" || error_exit "Failed to create PKCS12 for ${name}"
 
     # Convert to JKS if needed
     if [[ "$keystore_type" == "jks" ]]; then
@@ -528,17 +538,17 @@ generate_opensearch_cert() {
     create_client_cnf "$cnf_file" "$node_name" "$dns_sans" "$ip_sans"
 
     # Generate private key
-    openssl genrsa -out "$cert_key" 2048
+    openssl genrsa -out "$cert_key" 2048 || error_exit "Failed to generate OpenSearch key"
 
     # Create CSR
-    openssl req -new -key "$cert_key" -out "$cert_csr" -config "$cnf_file"
+    openssl req -new -key "$cert_key" -out "$cert_csr" -config "$cnf_file" || error_exit "Failed to create OpenSearch CSR"
 
     # Sign with CA
     openssl x509 -req -in "$cert_csr" \
         -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial \
         -out "$cert_pem" \
         -days 3650 \
-        -extensions v3_req -extfile "$cnf_file"
+        -extensions v3_req -extfile "$cnf_file" || error_exit "Failed to sign OpenSearch certificate"
 
     # Set permissions
     chmod 644 "$cert_pem"
@@ -605,7 +615,11 @@ main() {
     # Create output directory
     mkdir -p "$OUTPUT_DIR" || error_exit "Cannot create output directory: $OUTPUT_DIR"
 
-    echo -e "${BOLD}📁 Output directory: $(realpath "$OUTPUT_DIR")${NC}"
+    if command -v realpath >/dev/null 2>&1; then
+        echo -e "${BOLD}📁 Output directory: $(realpath "$OUTPUT_DIR")${NC}"
+    else
+        echo -e "${BOLD}📁 Output directory: ${OUTPUT_DIR}${NC}"
+    fi
     echo ""
 
     # Generate CA
