@@ -346,7 +346,7 @@ generate_ca() {
 
     echo -e "${BLUE}  📝 Generating CA private key (${CA_KEY_SIZE} bits)...${NC}"
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:"${CA_KEY_SIZE}" -out "$ca_key"
-    chmod 600 "$ca_key"
+    chmod 644 "$ca_key"
 
     echo -e "${BLUE}  📝 Generating CA certificate...${NC}"
     local subject="/C=${CA_COUNTRY}"
