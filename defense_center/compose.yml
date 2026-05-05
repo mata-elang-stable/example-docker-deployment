@@ -200,7 +200,8 @@ services:
         hard: 65536
     volumes:
       - opensearch_data1:/usr/share/opensearch/data
-      - ../ssl_certs/opensearch:/usr/share/opensearch/config/certificates:ro
+      - ../ssl_certs/opensearch/opensearch-node1.pem:/usr/share/opensearch/config/certificates/opensearch-node1.pem:ro
+      - ../ssl_certs/opensearch/opensearch-node1-key.pem:/usr/share/opensearch/config/certificates/opensearch-node1-key.pem:ro
       - ../ssl_certs/ca/ca.crt:/usr/share/opensearch/config/certificates/root-ca.pem:ro
 
   opensearch-dashboards:
