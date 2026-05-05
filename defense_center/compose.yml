@@ -103,10 +103,14 @@ services:
       - SCHEMA_REGISTRY_KAFKASTORE_SSL_KEY_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
       - SCHEMA_REGISTRY_KAFKASTORE_SSL_KEYSTORE_TYPE=JKS
       - SCHEMA_REGISTRY_LISTENERS=https://0.0.0.0:8081
+      - SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL=https
+      - SCHEMA_REGISTRY_SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL=https
+#      - SCHEMA_REGISTRY_SSL_CLIENT_AUTHENTICATION=REQUIRED
+      - SCHEMA_REGISTRY_SSL_TRUSTSTORE_LOCATION=/etc/kafka/secrets/truststore.jks
+      - SCHEMA_REGISTRY_SSL_TRUSTSTORE_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
       - SCHEMA_REGISTRY_SSL_KEYSTORE_LOCATION=/etc/kafka/secrets/schema-registry-keystore.jks
       - SCHEMA_REGISTRY_SSL_KEYSTORE_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
       - SCHEMA_REGISTRY_SSL_KEY_PASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
-      - SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL=https
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -121,9 +125,12 @@ services:
     volumes:
       - ../ssl_certs/truststore/truststore.jks:/app/truststore.jks:ro
       - ../ssl_certs/kafka-ui/kafka-ui.p12:/app/kafka-ui-keystore.p12:ro
+      - ../ssl_certs/schema-registry/schema-registry-keystore.jks:/app/schema-registry-keystore.jks:ro
     environment:
       - KAFKA_CLUSTERS_0_NAME=MataElangKafkaCluster
       - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=https://schema-registry:8081
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRYSSL_KEYSTORELOCATION=/app/schema-registry-keystore.jks
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRYSSL_KEYSTOREPASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=broker:19094
       - KAFKA_CLUSTERS_0_METRICS_PORT=9101
       - KAFKA_CLUSTERS_0_METRICS_HOST=broker
@@ -140,6 +147,8 @@ services:
       - DYNAMIC_CONFIG_ENABLED=true
       - KAFKA_CLUSTERS_0_SCHEMAREGISTRYSSL_TRUSTSTORELOCATION=/app/truststore.jks
       - KAFKA_CLUSTERS_0_SCHEMAREGISTRYSSL_TRUSTSTOREPASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
+      - KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION=/app/truststore.jks
+      - KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD=${SSL_PASSWORD:-SslSecurePassword@123}
     deploy:
       resources:
         limits:
