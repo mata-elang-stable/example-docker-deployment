@@ -44,6 +44,7 @@ services:
       MES_CLIENT_SERVER_NAME: sensor-api
     volumes:
       - snort_log:/var/log/snort:rw
+      - ./custom.rules:/usr/local/etc/snort3/rules/local.rules:ro
       - ../ssl_certs/ca/ca.crt:/secrets/ca.crt:ro
     deploy:
       resources:
